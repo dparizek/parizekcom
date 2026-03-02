@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Generated site output (rebuild with python3 build_site.py)
+site/
+
+# Virtual environments
+.venv/
+venv/
+
+# Logs
+*.log
