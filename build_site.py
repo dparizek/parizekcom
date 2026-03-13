@@ -22,6 +22,25 @@ SITE    = BASE / "site"
 # Helpers
 # ---------------------------------------------------------------------------
 
+def preprocess_urls(text: str) -> str:
+    # Convert [word https://url] shortcodes → [word](https://url)
+    text = re.sub(r'\[(\w+)\s+(https?://[^\]\s]+)\]', r'[\1](\2)', text)
+
+    # Linkify bare URLs not already wrapped in markdown or angle brackets.
+    # Match three alternatives; only replace the third (bare URL).
+    pattern = re.compile(
+        r'(\]\(https?://[^\)]*\))'    # group 1: already inside ](url) — skip
+        r'|(<https?://[^>]*>)'         # group 2: angle-bracket URL — skip
+        r'|(https?://[^\s<>\[\]"\']+)' # group 3: bare URL — linkify
+    )
+    def _replace(m):
+        if m.group(1) or m.group(2):
+            return m.group(0)
+        url = m.group(3).rstrip('.,;:!?)')
+        return f'[{url}]({url})'
+    return pattern.sub(_replace, text)
+
+
 def parse_md_file(path: Path) -> dict:
     """Return {front_matter dict, body_html}."""
     text = path.read_text(encoding="utf-8")
@@ -60,6 +79,7 @@ def parse_md_file(path: Path) -> dict:
     # Remove the h1 title line (it's in the front matter already)
     body = re.sub(r"^#\s+.+\n", "", body, count=1).strip()
 
+    body = preprocess_urls(body)
     body_html = markdown.markdown(
         body,
         extensions=["extra", "sane_lists"],
@@ -505,7 +525,7 @@ def html_shell(title: str, body: str, active: str = "", sidebar: str = "") -> st
     </div>
 {sidebar}
   </div>
-  <footer>parizek.com &middot; exported from WordPress</footer>
+  <footer>parizek.com</footer>
 </div>
 </body>
 </html>"""
