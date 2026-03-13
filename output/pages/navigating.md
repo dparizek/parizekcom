@@ -2,6 +2,7 @@
 title: Navigating
 date: 2018-08-10
 author: dparizek
+private: true
 original_url: http://parizek.com/navigating/
 ---
 

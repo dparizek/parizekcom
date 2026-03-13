@@ -2,6 +2,7 @@
 title: Joy
 date: 2018-07-11
 author: dparizek
+private: true
 original_url: http://parizek.com/joy/
 ---
 

@@ -2,6 +2,7 @@
 title: The Helicopter
 date: 2018-07-16
 author: dparizek
+private: true
 original_url: http://parizek.com/the-helicopter/
 ---
 

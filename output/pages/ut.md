@@ -2,6 +2,7 @@
 title: UT
 date: 2018-07-17
 author: dparizek
+private: true
 original_url: http://parizek.com/ut/
 ---
 

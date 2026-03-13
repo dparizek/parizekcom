@@ -103,6 +103,14 @@ def format_date_long(date_str: str) -> str:
         return date_str
 
 
+def slugify(text: str) -> str:
+    """Convert 'Web Development' to 'web-development'."""
+    text = text.lower().strip()
+    text = re.sub(r'[^\w\s-]', '', text)
+    text = re.sub(r'[\s_]+', '-', text)
+    return text.strip('-')
+
+
 # ---------------------------------------------------------------------------
 # HTML templates
 # ---------------------------------------------------------------------------
@@ -438,11 +446,15 @@ footer {
 def build_sidebar(posts: list, pages: list, site_root: str = "") -> str:
     cats = sorted({c for p in posts for c in p["fm"].get("categories", [])
                    if c.lower() != "uncategorized"})
+    public_pages = [p for p in pages if not p["fm"].get("private")]
     pages_html = "".join(
         f'<li><a href="{site_root}{p["url"]}">{p["fm"].get("title", p["slug"])}</a></li>'
-        for p in pages
+        for p in public_pages
     )
-    cats_html = "".join(f'<li>{c}</li>' for c in cats)
+    cats_html = "".join(
+        f'<li><a href="{site_root}categories/{slugify(c)}.html">{c}</a></li>'
+        for c in cats
+    )
     return f"""<aside class="sidebar">
   <div class="widget">
     <h3 class="widget-title">Pages</h3>
@@ -508,7 +520,8 @@ def build_feed(posts: list, pages: list, limit: int = 10) -> str:
         excerpt = extract_excerpt(p["body_html"])
         date_display = format_date_long(date)
         cats_filtered = [c for c in cats if c.lower() != "uncategorized"]
-        cat_str = f' &middot; <span class="cat">{", ".join(cats_filtered)}</span>' if cats_filtered else ""
+        cat_links = ", ".join(f'<a href="categories/{slugify(c)}.html">{c}</a>' for c in cats_filtered)
+        cat_str = f' &middot; <span class="cat">{cat_links}</span>' if cats_filtered else ""
         excerpt_html = f'<p class="post-excerpt">{excerpt}</p>' if excerpt else ""
         rows.append(
             f'<div class="post-card">'
@@ -544,7 +557,8 @@ def build_archive(posts: list, pages: list) -> str:
             date  = p["fm"].get("date", "")
             cats  = p["fm"].get("categories", [])
             cats_filtered = [c for c in cats if c.lower() != "uncategorized"]
-            cat_str = f' <span class="categories">({", ".join(cats_filtered)})</span>' if cats_filtered else ""
+            cat_links = ", ".join(f'<a href="categories/{slugify(c)}.html">{c}</a>' for c in cats_filtered)
+            cat_str = f' <span class="categories">({cat_links})</span>' if cats_filtered else ""
             date_display = date[5:] if len(date) >= 7 else date  # MM-DD
             rows.append(
                 f'<li>'
@@ -558,6 +572,8 @@ def build_archive(posts: list, pages: list) -> str:
     rows.append('<h2>Pages</h2>')
     rows.append('<ul class="page-list">')
     for p in pages:
+        if p["fm"].get("private"):
+            continue
         title = p["fm"].get("title", p["slug"])
         rows.append(f'<li><a href="{p["url"]}">{title}</a></li>')
     rows.append("</ul></div>")
@@ -578,7 +594,9 @@ def build_article(item: dict, kind: str, posts: list, pages: list) -> str:
     meta_parts = []
     if date:   meta_parts.append(f'<span>{format_date_long(date)}</span>')
     if author: meta_parts.append(f'<span>by {author}</span>')
-    if cats:   meta_parts.append(f'<span>{", ".join(cats)}</span>')
+    if cats:
+        cat_links = ", ".join(f'<a href="../categories/{slugify(c)}.html">{c}</a>' for c in cats)
+        meta_parts.append(f'<span>{cat_links}</span>')
     if tags:   meta_parts.append(f'<span>#{" #".join(tags)}</span>')
     meta_html = f'<div class="post-meta">{"".join(meta_parts)}</div>' if meta_parts else ""
 
@@ -601,6 +619,34 @@ def build_article(item: dict, kind: str, posts: list, pages: list) -> str:
     return html_shell(title, body, active=kind, sidebar=sidebar)
 
 
+def build_category_page(category: str, cat_posts: list, all_posts: list, pages: list) -> str:
+    rows = [f'<h1 style="font-family:Montserrat,sans-serif;font-size:1.75rem;font-weight:700;margin-bottom:1.5rem;">{category}</h1>']
+    by_year = defaultdict(list)
+    for p in cat_posts:
+        year = p["fm"].get("date", "0000")[:4]
+        by_year[year].append(p)
+
+    for year in sorted(by_year.keys(), reverse=True):
+        rows.append(f'<div class="year-group">')
+        rows.append(f'<div class="year-label">{year}</div>')
+        rows.append('<ul class="post-list">')
+        for p in by_year[year]:
+            title = p["fm"].get("title", p["slug"])
+            date  = p["fm"].get("date", "")
+            date_display = date[5:] if len(date) >= 7 else date
+            rows.append(
+                f'<li>'
+                f'<span class="post-date">{date_display}</span>'
+                f'<span class="post-title"><a href="../{p["url"]}">{title}</a></span>'
+                f'</li>'
+            )
+        rows.append("</ul></div>")
+
+    body = "\n".join(rows)
+    sidebar = build_sidebar(all_posts, pages, site_root="../")
+    return html_shell(category, body, active="category", sidebar=sidebar)
+
+
 def main():
     print("Loading Markdown files...")
     posts, pages = load_all()
@@ -609,6 +655,7 @@ def main():
     SITE.mkdir(exist_ok=True)
     (SITE / "posts").mkdir(exist_ok=True)
     (SITE / "pages").mkdir(exist_ok=True)
+    (SITE / "categories").mkdir(exist_ok=True)
 
     # Home feed
     (SITE / "index.html").write_text(build_feed(posts, pages), encoding="utf-8")
@@ -631,6 +678,19 @@ def main():
         out  = SITE / "pages" / f"{item['slug']}.html"
         out.write_text(html, encoding="utf-8")
         print(f"  site/pages/{item['slug']}.html")
+
+    # Category index pages
+    cat_map = defaultdict(list)
+    for p in posts:
+        for c in p["fm"].get("categories", []):
+            if c.lower() != "uncategorized":
+                cat_map[c].append(p)
+    for cat, cat_posts in sorted(cat_map.items()):
+        slug = slugify(cat)
+        html = build_category_page(cat, cat_posts, posts, pages)
+        out  = SITE / "categories" / f"{slug}.html"
+        out.write_text(html, encoding="utf-8")
+        print(f"  site/categories/{slug}.html")
 
     print(f"\nDone. Open site/index.html in a browser.")
 
